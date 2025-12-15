@@ -11,6 +11,7 @@ Quick start (Windows):
 2. Install the helper tool and create a virtual environment:
 
 	pip install uv
+
 	uv sync
 
 3. Activate the virtual environment (Windows):
