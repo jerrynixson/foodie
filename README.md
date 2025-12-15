@@ -15,7 +15,8 @@ Quick start (Windows):
 
 3. Activate the virtual environment (Windows):
 
-	venv\Scripts\activate
+	venv\Scripts\activate or 
+ .venv\Scripts\activate.ps1
 
 4. Run the app:
 
