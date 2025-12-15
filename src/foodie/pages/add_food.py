@@ -76,52 +76,43 @@ def add_food_dialog(user: User, meal_type: str, log_date: date):
     if "form_carbs" not in st.session_state: st.session_state.form_carbs = 0.0
     if "form_fat" not in st.session_state: st.session_state.form_fat = 0.0
 
-    # Callback for form submission
-    def submit_food():
-        name_val = st.session_state.form_name
-        cals_val = st.session_state.form_cals
-        
-        if not name_val or cals_val is None:
-            st.session_state.add_food_error = "Food Name and Calories are required."
-            return
-
-        new_food = FoodItem(
-            log_date=log_date,
-            name=name_val,
-            meal_type=meal_type,
-            calories=cals_val,
-            protein=st.session_state.form_prot,
-            carbs=st.session_state.form_carbs,
-            fat=st.session_state.form_fat,
-        )
-        user.food_items.append(new_food)
-        
-        # Clear inputs
-        st.session_state.form_name = ""
-        st.session_state.form_cals = 0
-        st.session_state.form_prot = 0.0
-        st.session_state.form_carbs = 0.0
-        st.session_state.form_fat = 0.0
-        
-        # Clear search (including the search input widget key)
-        st.session_state.food_search_input = ""
-        st.session_state.search_query = ""
-        st.session_state.search_results = []
-        st.session_state.last_selected_food = "Select..."
-        st.session_state.food_search_select = "Select..."
-        
-        st.session_state.add_food_error = None
-
     st.info("Please verify or enter nutritional information manually below.")
 
     with st.form("add_food_form"):
-        name_val = st.text_input("Food Name*", key="form_name", placeholder="e.g., 'Chicken Breast'")
-        calories_val = st.number_input("Calories*", min_value=0, step=10, key="form_cals")
-        protein_val = st.number_input("Protein (g)", min_value=0.0, step=0.1, format="%.1f", key="form_prot")
-        carbs_val = st.number_input("Carbs (g)", min_value=0.0, step=0.1, format="%.1f", key="form_carbs")
-        fat_val = st.number_input("Fat (g)", min_value=0.0, step=0.1, format="%.1f", key="form_fat")
+        name_val = st.text_input("Food Name*", value=st.session_state.form_name, placeholder="e.g., 'Chicken Breast'")
+        calories_val = st.number_input("Calories*", min_value=0, step=10, value=st.session_state.form_cals)
+        protein_val = st.number_input("Protein (g)", min_value=0.0, step=0.1, format="%.1f", value=st.session_state.form_prot)
+        carbs_val = st.number_input("Carbs (g)", min_value=0.0, step=0.1, format="%.1f", value=st.session_state.form_carbs)
+        fat_val = st.number_input("Fat (g)", min_value=0.0, step=0.1, format="%.1f", value=st.session_state.form_fat)
 
-        st.form_submit_button("Add Item", use_container_width=True, on_click=submit_food)
+        submitted = st.form_submit_button("Add Item", use_container_width=True)
         
     if st.session_state.get("add_food_error"):
         st.error(st.session_state.add_food_error)
+        
+    # Process form submission after form is rendered
+    if submitted:
+        if not name_val or calories_val is None:
+            st.session_state.add_food_error = "Food Name and Calories are required."
+            st.rerun()
+        else:
+            new_food = FoodItem(
+                log_date=log_date,
+                name=name_val,
+                meal_type=meal_type,
+                calories=calories_val,
+                protein=protein_val,
+                carbs=carbs_val,
+                fat=fat_val,
+            )
+            user.food_items.append(new_food)
+            
+            # Delete keys from session state to avoid widget key conflicts
+            for key in ["form_name", "form_cals", "form_prot", "form_carbs", "form_fat",
+                       "food_search_input", "search_query", "search_results", 
+                       "last_selected_food", "food_search_select", "add_food_error"]:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # Rerun to close dialog and update UI
+            st.rerun()
