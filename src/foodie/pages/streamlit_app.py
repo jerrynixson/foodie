@@ -8,11 +8,75 @@ import altair as alt
 # Import the backend logic and the updated models
 from foodie.logic.models import UserProfile, LogEntry, User, FoodItem
 import foodie.logic.tdee_logic as tdee_logic
-import foodie.logic.kalman_filter_model as kalman_filter_model
+import foodie.logic.kalman_filter_model as kalman_filter_model  
 import foodie.logic.adaptive_service as main # We will "monkey-patch" its in-memory DB
 from foodie.pages.add_food import add_food_dialog
+from foodie.pages.visualizations import visualizations_page
+from foodie.chatbot import render_chat_assistant
 
 # --- HELPER FUNCTIONS ---
+
+def create_macro_progress_ring(name: str, current: float, target: float, unit: str = "g", color: str = "#1f77b4"):
+    """Create a circular progress ring showing macro progress towards target"""
+    progress = min(current / target, 1.0) if target > 0 else 0
+    percentage = progress * 100
+    
+    # Create SVG for circular progress
+    size = 120
+    center = size / 2
+    radius = 45
+    circumference = 2 * math.pi * radius
+    stroke_dasharray = circumference
+    stroke_dashoffset = circumference * (1 - progress)
+    
+    svg = f"""
+    <div style="display: flex; flex-direction: column; align-items: center; margin: 10px;">
+        <div style="position: relative; width: {size}px; height: {size}px;">
+            <svg width="{size}" height="{size}" style="transform: rotate(-90deg);">
+                <!-- Background circle -->
+                <circle
+                    cx="{center}" cy="{center}" r="{radius}"
+                    stroke="#e6e6e6"
+                    stroke-width="8"
+                    fill="transparent"
+                />
+                <!-- Progress circle -->
+                <circle
+                    cx="{center}" cy="{center}" r="{radius}"
+                    stroke="{color}"
+                    stroke-width="8"
+                    stroke-linecap="round"
+                    fill="transparent"
+                    stroke-dasharray="{stroke_dasharray}"
+                    stroke-dashoffset="{stroke_dashoffset}"
+                    style="transition: stroke-dashoffset 0.5s ease-in-out;"
+                />
+            </svg>
+            <!-- Center text -->
+            <div style="
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                text-align: center;
+                font-family: sans-serif;
+            ">
+                <div style="font-size: 18px; font-weight: bold; color: {color};">
+                    {current:.0f}{unit}
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                    {percentage:.0f}%
+                </div>
+            </div>
+        </div>
+        <!-- Label -->
+        <div style="margin-top: 8px; text-align: center;">
+            <div style="font-size: 14px; font-weight: bold;">{name}</div>
+            <div style="font-size: 12px; color: #666;">{target:.0f}{unit} left</div>
+        </div>
+    </div>
+    """
+    return svg
 
 def calculate_time_to_goal(user: User):
     """Estimates the time to reach the goal weight."""
@@ -156,11 +220,41 @@ def dashboard_page():
     user_name = getattr(user, 'name', 'User') 
     st.sidebar.header(f"Hey there, {user_name}!")
     
-    if st.sidebar.button("Logout", use_container_width=True):
+    # Sidebar Navigation
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📱 Navigation")
+    
+    # Navigation buttons
+    if st.sidebar.button("🏠 Dashboard", use_container_width=True, type="primary" if st.session_state.get('current_view', 'dashboard') == 'dashboard' else "secondary"):
+        st.session_state.current_view = "dashboard"
+        st.rerun()
+        
+    if st.sidebar.button("📊 Analytics", use_container_width=True, type="primary" if st.session_state.get('current_view', 'dashboard') == 'analytics' else "secondary"):
+        st.session_state.current_view = "analytics"
+        st.rerun()
+    
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Logout", use_container_width=True):
         st.session_state.user_id = None
         st.session_state.page = "login"
+        st.session_state.current_view = "dashboard"
         st.rerun()
 
+    # Add the AI Chat Assistant to sidebar
+    try:
+        render_chat_assistant(user)
+    except Exception as e:
+        st.sidebar.error(f"Chat assistant unavailable: {str(e)}")
+        st.sidebar.info("💡 Make sure to set up your OPENROUTER_API_KEY in the .env file")
+
+    # Check which view to show
+    current_view = st.session_state.get('current_view', 'dashboard')
+    
+    if current_view == 'analytics':
+        visualizations_page()
+        return
+    
+    # Default dashboard view
     st.title("Your Adaptive Nutrition Dashboard")
 
     if 'diary_date' not in st.session_state:
@@ -190,10 +284,42 @@ def dashboard_page():
 
         st.markdown(f"<p style='text-align: center; font-size: small; opacity: 0.7;'>Est. Maintenance: {maintenance_calories} kcal</p>", unsafe_allow_html=True)
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Protein", f"{summary['protein']:.1f} g")
-        m2.metric("Carbs", f"{summary['carbs']:.1f} g")
-        m3.metric("Fat", f"{summary['fat']:.1f} g")
+        # Display macro progress rings
+        st.subheader("🧬 Macros")
+        
+        # Create macro progress rings
+        protein_ring = create_macro_progress_ring(
+            "Protein", 
+            summary['protein'], 
+            user.macro_targets.protein_g, 
+            "g", 
+            "#4CAF50"
+        )
+        
+        carbs_ring = create_macro_progress_ring(
+            "Carbs", 
+            summary['carbs'], 
+            user.macro_targets.carbs_g, 
+            "g", 
+            "#FF9800"
+        )
+        
+        fat_ring = create_macro_progress_ring(
+            "Fat", 
+            summary['fat'], 
+            user.macro_targets.fat_g, 
+            "g", 
+            "#2196F3"
+        )
+        
+        # Display rings in columns
+        ring_col1, ring_col2, ring_col3 = st.columns(3)
+        with ring_col1:
+            st.markdown(protein_ring, unsafe_allow_html=True)
+        with ring_col2:
+            st.markdown(carbs_ring, unsafe_allow_html=True)
+        with ring_col3:
+            st.markdown(fat_ring, unsafe_allow_html=True)
 
     with col2:
         st.subheader("Log Your Weight")
@@ -258,31 +384,54 @@ def dashboard_page():
                 add_food_dialog(user, meal, st.session_state.diary_date)
                 
     st.divider()
-    tab2, tab3, tab4 = st.tabs(["📈 Progress Charts", "🧠 Adaptation Details", "📜 Full History"])
+    tab2, tab3, tab4 = st.tabs(["📈 Quick Charts", "🧠 Adaptation Details", "📜 Full History"])
     with tab2:
-        st.subheader("Progress Charts")
+        st.subheader("Quick Progress Overview")
         if len(user.logs) >= 2:
             df = pd.DataFrame([log.model_dump() for log in user.logs])
             df['log_date'] = pd.to_datetime(df['log_date'])
 
-            st.markdown("##### Weight Trend (kg)")
-            min_weight = df['weight_kg'].min()
-            max_weight = df['weight_kg'].max()
-            weight_buffer = (max_weight - min_weight) * 0.1 + 1 
-            weight_domain = [min_weight - weight_buffer, max_weight + weight_buffer]
+            col_chart, col_info = st.columns([2, 1])
+            
+            with col_chart:
+                st.markdown("**Recent Weight Trend**")
+                min_weight = df['weight_kg'].min()
+                max_weight = df['weight_kg'].max()
+                weight_buffer = (max_weight - min_weight) * 0.1 + 1 
+                weight_domain = [min_weight - weight_buffer, max_weight + weight_buffer]
 
-            weight_chart = alt.Chart(df).mark_line(
-                color='#1f77b4',
-                point=True
-            ).encode(
-                x=alt.X('log_date:T', title='Date'),
-                y=alt.Y('weight_kg:Q', title='Weight (kg)', scale=alt.Scale(domain=weight_domain, clamp=True)),
-                tooltip=['log_date', 'weight_kg']
-            ).interactive()
-            st.altair_chart(weight_chart, use_container_width=True)
-
+                weight_chart = alt.Chart(df).mark_line(
+                    color='#1f77b4',
+                    point=True
+                ).encode(
+                    x=alt.X('log_date:T', title='Date'),
+                    y=alt.Y('weight_kg:Q', title='Weight (kg)', scale=alt.Scale(domain=weight_domain, clamp=True)),
+                    tooltip=['log_date', 'weight_kg']
+                ).interactive()
+                st.altair_chart(weight_chart, use_container_width=True)
+            
+            with col_info:
+                st.markdown("**📊 Quick Stats**")
+                latest_weight = df['weight_kg'].iloc[-1]
+                initial_weight = df['weight_kg'].iloc[0]
+                total_change = latest_weight - initial_weight
+                days_tracked = len(df)
+                
+                st.metric("Current Weight", f"{latest_weight:.1f} kg")
+                st.metric("Total Change", f"{total_change:+.1f} kg")
+                st.metric("Days Tracked", f"{days_tracked}")
+                
+                st.info("💡 **Want detailed analytics?** Check out the Analytics page in the sidebar for comprehensive charts and insights!")
         else:
             st.info("Log at least two weight entries to see progress charts.")
+            st.markdown("### 🔮 Coming Soon:")
+            st.markdown("""
+            - Weight trend visualization
+            - Quick progress metrics  
+            - Growth indicators
+            
+            **💡 Tip:** Visit the Analytics page (sidebar) for comprehensive visualizations once you have more data!
+            """)
 
     with tab3:
         st.subheader("Model Confidence & Data Quality")
@@ -359,6 +508,11 @@ def run_app():
             initial_tdee = tdee_logic.calculate_initial_tdee(profile, start_weight_kg)
             daily_adj = (profile.goal_kg_per_week * kalman_filter_model.CALORIES_PER_KG) / 7
             initial_goal = int(initial_tdee + daily_adj)
+            
+            # Calculate initial macro targets
+            initial_macro_targets = tdee_logic.calculate_macro_targets(
+                initial_goal, profile, start_weight_kg
+            )
 
             new_user = User(
                 user_id=user_id,
@@ -366,6 +520,7 @@ def run_app():
                 profile=profile,
                 initial_calorie_goal=initial_goal,
                 adapted_calorie_goal=initial_goal,
+                macro_targets=initial_macro_targets,
                 kf_tdee_estimate=initial_tdee,
             )
             # Use the global main.db which we ensured points to st.session_state.db

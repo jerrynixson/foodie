@@ -1,4 +1,4 @@
-from foodie.logic.models import User, UserProfile
+from foodie.logic.models import User, UserProfile, MacroTargets
 from typing import Tuple, Optional
 import math
 
@@ -22,6 +22,66 @@ def calculate_initial_tdee(profile: UserProfile, weight_kg: float) -> float:
     tdee = bmr * profile.activity_level
     return tdee
 
+# --- MACRO NUTRIENT CALCULATION ---
+def calculate_macro_targets(calorie_goal: int, profile: UserProfile, current_weight: float) -> MacroTargets:
+    """
+    Calculate macro nutrient targets based on calorie goal and user profile.
+    Uses evidence-based macro distributions based on goals.
+    """
+    # Determine goal type based on weekly weight change target
+    goal_type = "maintenance"
+    if profile.goal_kg_per_week < -0.1:
+        goal_type = "weight_loss"
+    elif profile.goal_kg_per_week > 0.1:
+        goal_type = "weight_gain"
+    
+    # Macro percentages based on goal and gender
+    if goal_type == "weight_loss":
+        # Higher protein for muscle preservation, moderate carbs, lower fat
+        protein_pct = 0.30 if profile.gender.lower() == 'male' else 0.28
+        carbs_pct = 0.40
+        fat_pct = 0.30
+    elif goal_type == "weight_gain":
+        # High protein for muscle building, higher carbs for energy, moderate fat
+        protein_pct = 0.25
+        carbs_pct = 0.50
+        fat_pct = 0.25
+    else:  # maintenance
+        # Balanced approach
+        protein_pct = 0.25
+        carbs_pct = 0.45
+        fat_pct = 0.30
+    
+    # Calculate protein needs (minimum based on body weight)
+    protein_per_kg = 1.6 if goal_type == "weight_loss" else 1.2 if goal_type == "maintenance" else 1.8
+    min_protein_g = current_weight * protein_per_kg
+    
+    # Calculate macros from percentages
+    protein_from_calories = (calorie_goal * protein_pct) / 4
+    carbs_g = (calorie_goal * carbs_pct) / 4
+    fat_g = (calorie_goal * fat_pct) / 9
+    
+    # Use the higher of percentage-based or body weight-based protein
+    protein_g = max(protein_from_calories, min_protein_g)
+    
+    # Adjust other macros if protein requirement increases total calories
+    total_protein_calories = protein_g * 4
+    remaining_calories = calorie_goal - total_protein_calories
+    
+    if remaining_calories > 0:
+        # Redistribute remaining calories between carbs and fat
+        carbs_calories = remaining_calories * (carbs_pct / (carbs_pct + fat_pct))
+        fat_calories = remaining_calories * (fat_pct / (carbs_pct + fat_pct))
+        
+        carbs_g = carbs_calories / 4
+        fat_g = fat_calories / 9
+    
+    return MacroTargets(
+        protein_g=round(protein_g, 1),
+        carbs_g=round(carbs_g, 1),
+        fat_g=round(fat_g, 1)
+    )
+
 def generate_adaptation_explanation(old_tdee: int, new_tdee: int, confidence: float, old_goal: int, new_goal: int) -> str:
     """Generate human-readable explanation for goal changes based on TDEE updates."""
     tdee_change = new_tdee - old_tdee
@@ -42,6 +102,7 @@ def run_adaptive_update(user: User) -> Tuple[int, str]:
     FIXED: Adaptive update with a direct and clear goal calculation.
     The primary purpose of this function is to calculate a new calorie goal
     based on the latest TDEE estimate from the Kalman Filter.
+    Also updates macro targets when calorie goals change.
     """
     # Check minimum data requirements
     if len(user.logs) < 7:
@@ -70,6 +131,10 @@ def run_adaptive_update(user: User) -> Tuple[int, str]:
     
     # Validate the goal is within safe bounds
     validated_goal, warning = validate_calorie_goal(new_goal, user)
+    
+    # Update macro targets when calorie goal changes
+    current_weight = user.logs[-1].weight_kg if user.logs else user.profile.goal_weight_kg
+    user.macro_targets = calculate_macro_targets(validated_goal, user.profile, current_weight)
     
     # Generate explanation based on the change in TDEE
     explanation = generate_adaptation_explanation(
