@@ -40,6 +40,17 @@ class LogEntry(BaseModel):
             pass
         return v
 
+class MacroTargets(BaseModel):
+    """Daily macro nutrient targets in grams"""
+    protein_g: float = Field(..., ge=0.0, description="Daily protein target in grams")
+    carbs_g: float = Field(..., ge=0.0, description="Daily carbohydrate target in grams")
+    fat_g: float = Field(..., ge=0.0, description="Daily fat target in grams")
+    
+    @property
+    def total_calories(self) -> int:
+        """Calculate total calories from macro targets (4 kcal/g protein&carbs, 9 kcal/g fat)"""
+        return int(self.protein_g * 4 + self.carbs_g * 4 + self.fat_g * 9)
+
 class DataQualityMetrics(BaseModel):
     """Tracks data quality for KF parameter adjustment"""
     consecutive_days: int = 0
@@ -50,9 +61,11 @@ class DataQualityMetrics(BaseModel):
 
 class User(BaseModel):
     user_id: str
+    name: str = Field(default="User", description="User's display name")
     profile: UserProfile
     initial_calorie_goal: int
     adapted_calorie_goal: int
+    macro_targets: MacroTargets
     
     kf_tdee_estimate: float
     kf_tdee_uncertainty: float = 50000.0
