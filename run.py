@@ -19,6 +19,7 @@ def main():
     print(f"Starting Foodie Services...")
     print(f"Project Root: {project_root}")
     print(f"Source Path: {src_path}")
+    public_port = int(env.get("PORT", 8000)) 
 
     processes = []
 
@@ -39,7 +40,7 @@ def main():
         # 2. Start Streamlit
         print("Starting Streamlit app...")
         streamlit_process = subprocess.Popen(
-            [sys.executable, "-m", "streamlit", "run", "src/foodie/pages/streamlit_app.py"],
+            [sys.executable, "-m", "streamlit", "run", "src/foodie/pages/streamlit_app.py", "--server.port", str(public_port)],
             cwd=project_root, # Run from root
             env=env
         )
