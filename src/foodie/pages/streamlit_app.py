@@ -12,6 +12,7 @@ import foodie.logic.kalman_filter_model as kalman_filter_model
 import foodie.logic.adaptive_service as main # We will "monkey-patch" its in-memory DB
 from foodie.pages.add_food import add_food_dialog
 from foodie.pages.visualizations import visualizations_page
+from foodie.pages.performance import performance_page
 from foodie.chatbot import render_chat_assistant
 
 # --- HELPER FUNCTIONS ---
@@ -232,6 +233,10 @@ def dashboard_page():
     if st.sidebar.button("📊 Analytics", use_container_width=True, type="primary" if st.session_state.get('current_view', 'dashboard') == 'analytics' else "secondary"):
         st.session_state.current_view = "analytics"
         st.rerun()
+
+    if st.sidebar.button("⚡ Performance", use_container_width=True, type="primary" if st.session_state.get('current_view', 'dashboard') == 'performance' else "secondary"):
+        st.session_state.current_view = "performance"
+        st.rerun()
     
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Logout", use_container_width=True):
@@ -252,6 +257,10 @@ def dashboard_page():
     
     if current_view == 'analytics':
         visualizations_page()
+        return
+    
+    if current_view == 'performance':
+        performance_page()
         return
     
     # Default dashboard view
